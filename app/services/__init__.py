@@ -1,2 +1,2 @@
 from .azure_speech import AzureSpeechService
-from .openai_grader import OpenAIGraderService
+from .openai_grader import OllamaGraderService

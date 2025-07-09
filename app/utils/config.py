@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     azure_speech_key: str
     azure_speech_region: str
     
-    # OpenAI
-    openai_api_key: str
+    # Ollama
+    ollama_url: str = "http://localhost:11434"
     
     # Application settings
     debug: bool = False

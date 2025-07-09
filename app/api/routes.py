@@ -10,7 +10,7 @@ from ..models.types import (
     OverallFeedbackResponse,
     SpeechCredentials
 )
-from ..services import AzureSpeechService, OpenAIGraderService
+from ..services import AzureSpeechService, OllamaGraderService
 from ..utils.config import get_settings
 
 
@@ -24,7 +24,7 @@ azure_speech_service = AzureSpeechService(
     subscription_key=settings.azure_speech_key,
     region=settings.azure_speech_region
 )
-openai_grader_service = OpenAIGraderService(api_key=settings.openai_api_key)
+ollama_grader_service = OllamaGraderService(ollama_url=settings.ollama_url)
 
 
 @router.post("/grader/score-answer", response_model=GraderResponse)
@@ -35,7 +35,7 @@ async def score_answer(request: GraderRequest) -> GraderResponse:
     try:
         logger.info(f"Scoring answer: {request.answer[:100]}...")
         
-        result = await openai_grader_service.score_answer(
+        result = await ollama_grader_service.score_answer(
             answer=request.answer,
             question=request.question
         )
@@ -56,7 +56,7 @@ async def generate_overall_feedback(request: OverallFeedbackRequest) -> OverallF
     try:
         logger.info(f"Generating overall feedback for {len(request.questions)} questions")
         
-        result = await openai_grader_service.generate_overall_feedback(
+        result = await ollama_grader_service.generate_overall_feedback(
             questions=request.questions,
             responses=request.responses,
             individual_feedbacks=request.individual_feedbacks,

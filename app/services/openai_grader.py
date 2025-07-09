@@ -1,7 +1,7 @@
 import logging
 from typing import Optional, Dict, Any, List
-import openai
-from openai import OpenAI
+import requests
+import json
 
 from ..models.types import (
     ContentAssessment, 
@@ -15,11 +15,12 @@ from ..models.types import (
 logger = logging.getLogger(__name__)
 
 
-class OpenAIGraderService:
-    """OpenAI-based content grading service"""
+class OllamaGraderService:
+    """Ollama-based content grading service using phi4 model"""
     
-    def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key)
+    def __init__(self, ollama_url: str = "http://localhost:11434"):
+        self.ollama_url = ollama_url
+        self.model = "phi4"
         
     async def score_answer(
         self, 
@@ -43,9 +44,8 @@ class OpenAIGraderService:
             else:
                 prompt = self._build_text_assessment_prompt(answer, question)
             
-            # Call OpenAI API
-            response = self.client.chat.completions.create(
-                model="gpt-4",
+            # Call Ollama API
+            response = await self._call_ollama(
                 messages=[
                     {"role": "system", "content": self._get_system_prompt()},
                     {"role": "user", "content": prompt}
@@ -55,7 +55,7 @@ class OpenAIGraderService:
             )
             
             # Parse the response
-            result = self._parse_grading_response(response.choices[0].message.content)
+            result = self._parse_grading_response(response)
             
             logger.info(f"Successfully scored answer with overall grade: {result.grade}")
             return result
@@ -88,8 +88,7 @@ class OpenAIGraderService:
                 questions, responses, individual_feedbacks, scores
             )
             
-            response = self.client.chat.completions.create(
-                model="gpt-4",
+            response = await self._call_ollama(
                 messages=[
                     {"role": "system", "content": self._get_overall_feedback_system_prompt()},
                     {"role": "user", "content": prompt}
@@ -98,7 +97,7 @@ class OpenAIGraderService:
                 max_tokens=1500
             )
             
-            feedback = response.choices[0].message.content.strip()
+            feedback = response.strip()
             
             logger.info("Successfully generated overall feedback")
             return OverallFeedbackResponse(feedback=feedback)
@@ -108,6 +107,46 @@ class OpenAIGraderService:
             return OverallFeedbackResponse(
                 feedback="Sorry, we encountered an error generating your overall feedback. Please try again."
             )
+    
+    async def _call_ollama(
+        self,
+        messages: List[Dict[str, str]], 
+        temperature: float = 0.3,
+        max_tokens: int = 1000
+    ) -> str:
+        """Make API call to Ollama"""
+        try:
+            payload = {
+                "model": self.model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                }
+            }
+            
+            response = requests.post(
+                f"{self.ollama_url}/api/chat",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=120
+            )
+            
+            response.raise_for_status()
+            result = response.json()
+            
+            return result["message"]["content"]
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ollama API call failed: {str(e)}")
+            raise Exception(f"Ollama API error: {str(e)}")
+        except KeyError as e:
+            logger.error(f"Unexpected Ollama response format: {str(e)}")
+            raise Exception(f"Invalid Ollama response format: {str(e)}")
+        except Exception as e:
+            logger.error(f"Unexpected error in Ollama call: {str(e)}")
+            raise
     
     def _get_system_prompt(self) -> str:
         """Get system prompt for answer grading"""
@@ -120,7 +159,9 @@ Your task is to evaluate student responses based on three criteria:
 
 Provide scores and constructive feedback that helps students improve their English speaking skills.
 
-Always respond in JSON format with the following structure:
+IMPORTANT: You must respond with valid JSON only. Do not include any other text outside the JSON structure.
+
+Response format:
 {
   "vocabulary": <score 0-100>,
   "grammar": <score 0-100>, 
